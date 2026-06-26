@@ -1,6 +1,7 @@
 services:
   falkordb:
     image: falkordb/falkordb:latest
+    restart: unless-stopped
     ports:
       - "6379:6379" # Redis/FalkorDB port
       - "3000:3000" # FalkorDB web UI

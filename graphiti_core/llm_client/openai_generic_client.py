@@ -159,7 +159,14 @@ class OpenAIGenericClient(LLMClient):
                 max_tokens=max_tokens,
                 response_format=self._build_response_format(response_model),  # type: ignore[arg-type]
             )
-            result = response.choices[0].message.content or ''
+            choices = getattr(response, 'choices', None) or []
+            if not choices:
+                raise EmptyResponseError('LLM returned no choices')
+            message = getattr(choices[0], 'message', None)
+            if message is None:
+                finish_reason = getattr(choices[0], 'finish_reason', None)
+                raise EmptyResponseError(f'LLM returned no message; finish_reason={finish_reason}')
+            result = message.content or ''
             # An empty body (refusal, length finish_reason, or a flaky endpoint) would make
             # json.loads raise a cryptic JSONDecodeError; surface a clear error instead.
             if not result:
