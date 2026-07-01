@@ -55,7 +55,7 @@ services:
     volumes:
       - falkordb_data:/data
     environment:
-      - FALKORDB_ARGS=--port 6379 --cluster-enabled no
+      - FALKORDB_ARGS=--port 6379 --cluster-enabled no --TIMEOUT_MAX 60000 --TIMEOUT_DEFAULT 60000
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "6379", "ping"]
       interval: 1s
