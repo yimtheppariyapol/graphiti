@@ -828,12 +828,18 @@ async def _extract_entity_attributes(
     try:
         entity_type(**merged)
     except ValidationError as e:
-        # Best-effort: an extraction model occasionally omits a typed attribute field.
-        # Dropping the whole episode over a shape mismatch loses real memory (esp. with
-        # non-Gemini models). Keep the merged attributes as-is instead. (Yim 2026-07-08)
+        # Only tolerate omitted (missing) typed fields — a non-Gemini extraction model
+        # occasionally drops one, and losing the whole episode over that loses real memory.
+        # Any OTHER violation (e.g. a Field(max_length=...) that the cap logic deliberately
+        # left for this check to reject) must still fail — don't defeat the schema/cap contract.
+        if any(err.get('type') != 'missing' for err in e.errors()):
+            raise
+        # Log identifiers + typed-field names only — never node.name or the raw error, whose
+        # strings embed offending input values (PII). (Yim 2026-07-08)
+        missing_fields = ', '.join('.'.join(str(x) for x in err['loc']) for err in e.errors())
         logger.warning(
-            f'entity attribute shape validation failed for {node.name} ({node.uuid}); '
-            f'keeping best-effort attributes: {e}'
+            f'entity attribute shape validation soft-failed for {node.uuid}; '
+            f'kept best-effort attributes (LLM-omitted typed fields: {missing_fields})'
         )
 
     return merged

@@ -18,6 +18,7 @@ import logging
 from typing import Any
 
 from graphiti_core.driver.driver import GraphProvider
+from graphiti_core.driver.falkordb.operations._attr_utils import falkor_safe_attributes
 from graphiti_core.driver.operations.entity_edge_ops import EntityEdgeOperations
 from graphiti_core.driver.query_executor import QueryExecutor, Transaction
 from graphiti_core.driver.record_parsers import entity_edge_from_record
@@ -28,8 +29,6 @@ from graphiti_core.models.edges.edge_db_queries import (
     get_entity_edge_save_bulk_query,
     get_entity_edge_save_query,
 )
-
-from graphiti_core.driver.falkordb.operations._attr_utils import falkor_safe_attributes
 
 logger = logging.getLogger(__name__)
 
