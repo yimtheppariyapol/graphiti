@@ -12,7 +12,9 @@ unit-tested without a live database or LLM:
   ``dict[tuple[str, str], list[str]]`` shape expected by ``Graphiti.add_episode``.
 """
 
+from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Optional
 
 from graphiti_core.search.search_filters import (
     ComparisonOperator,
@@ -76,6 +78,25 @@ def _doc_only_model(name: str, description: str) -> type[BaseModel]:
     return model
 
 
+def _optional_model(model: type[BaseModel]) -> type[BaseModel]:
+    """Rebuild ``model`` with every field Optional/default-None.
+
+    Registered entity-type models declare required str fields; a real extraction
+    where the LLM omits one would fail response_model validation and drop the whole
+    episode. Making fields optional turns an omission into ``None`` instead. Field
+    constraints (e.g. max_length) are preserved via deepcopy; provided values still
+    validate. (Yim 2026-07-08 — residual intermittent-drop fix)
+    """
+    fields: dict[str, tuple] = {}
+    for fname, finfo in model.model_fields.items():
+        relaxed = deepcopy(finfo)
+        relaxed.default = None
+        fields[fname] = (Optional[finfo.annotation], relaxed)
+    out = create_model(model.__name__, **fields)
+    out.__doc__ = model.__doc__
+    return out
+
+
 def build_entity_types(
     entity_type_configs: list[EntityTypeConfig] | None,
 ) -> dict[str, type[BaseModel]] | None:
@@ -93,7 +114,7 @@ def build_entity_types(
     for cfg in entity_type_configs:
         registered = ENTITY_TYPES.get(cfg.name)
         result[cfg.name] = (
-            registered if registered is not None else _doc_only_model(cfg.name, cfg.description)
+            _optional_model(registered) if registered is not None else _doc_only_model(cfg.name, cfg.description)
         )
     return result
 
@@ -113,7 +134,7 @@ def build_edge_types(
     for cfg in edge_type_configs:
         registered = EDGE_TYPES.get(cfg.name)
         result[cfg.name] = (
-            registered if registered is not None else _doc_only_model(cfg.name, cfg.description)
+            _optional_model(registered) if registered is not None else _doc_only_model(cfg.name, cfg.description)
         )
     return result
 
