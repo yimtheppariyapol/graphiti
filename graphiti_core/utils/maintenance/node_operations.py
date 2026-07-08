@@ -19,7 +19,7 @@ from collections.abc import Awaitable, Callable
 from time import time
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from graphiti_core.edges import EntityEdge
 from graphiti_core.graphiti_types import GraphitiClients
@@ -825,7 +825,16 @@ async def _extract_entity_attributes(
     # Shape validation only — we discard the validated instance because returning
     # `model_dump()` would expand defaults across all fields and clobber prior
     # values that the merge above just preserved.
-    entity_type(**merged)
+    try:
+        entity_type(**merged)
+    except ValidationError as e:
+        # Best-effort: an extraction model occasionally omits a typed attribute field.
+        # Dropping the whole episode over a shape mismatch loses real memory (esp. with
+        # non-Gemini models). Keep the merged attributes as-is instead. (Yim 2026-07-08)
+        logger.warning(
+            f'entity attribute shape validation failed for {node.name} ({node.uuid}); '
+            f'keeping best-effort attributes: {e}'
+        )
 
     return merged
 
