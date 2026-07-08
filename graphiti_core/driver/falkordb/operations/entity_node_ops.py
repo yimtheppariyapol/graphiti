@@ -29,6 +29,8 @@ from graphiti_core.models.nodes.node_db_queries import (
 )
 from graphiti_core.nodes import EntityNode
 
+from graphiti_core.driver.falkordb.operations._attr_utils import falkor_safe_attributes
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +49,7 @@ class FalkorEntityNodeOperations(EntityNodeOperations):
             'summary': node.summary,
             'created_at': node.created_at,
         }
-        entity_data.update(node.attributes or {})
+        entity_data.update(falkor_safe_attributes(node.attributes))
         labels = ':'.join(list(set(node.labels + ['Entity'])))
 
         query = get_entity_node_save_query(GraphProvider.FALKORDB, labels)
@@ -77,7 +79,7 @@ class FalkorEntityNodeOperations(EntityNodeOperations):
                 'name_embedding': node.name_embedding,
                 'labels': list(set(node.labels + ['Entity'])),
             }
-            entity_data.update(node.attributes or {})
+            entity_data.update(falkor_safe_attributes(node.attributes))
             prepared.append(entity_data)
 
         # FalkorDB returns a list of (query, params) tuples for bulk save

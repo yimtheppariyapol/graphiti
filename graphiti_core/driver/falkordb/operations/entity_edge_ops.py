@@ -29,6 +29,8 @@ from graphiti_core.models.edges.edge_db_queries import (
     get_entity_edge_save_query,
 )
 
+from graphiti_core.driver.falkordb.operations._attr_utils import falkor_safe_attributes
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,7 +55,7 @@ class FalkorEntityEdgeOperations(EntityEdgeOperations):
             'valid_at': edge.valid_at,
             'invalid_at': edge.invalid_at,
         }
-        edge_data.update(edge.attributes or {})
+        edge_data.update(falkor_safe_attributes(edge.attributes))
 
         query = get_entity_edge_save_query(GraphProvider.FALKORDB)
         if tx is not None:
@@ -86,7 +88,7 @@ class FalkorEntityEdgeOperations(EntityEdgeOperations):
                 'valid_at': edge.valid_at,
                 'invalid_at': edge.invalid_at,
             }
-            edge_data.update(edge.attributes or {})
+            edge_data.update(falkor_safe_attributes(edge.attributes))
             prepared.append(edge_data)
 
         query = get_entity_edge_save_bulk_query(GraphProvider.FALKORDB)
