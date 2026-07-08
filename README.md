@@ -715,3 +715,21 @@ to [CONTRIBUTING](CONTRIBUTING.md).
 ## Support
 
 Join the [Zep Discord server](https://discord.com/invite/W8Kw6bsgXQ) and make your way to the **#Graphiti** channel!
+
+## Inference stack & LiteLLM gateway
+
+Fleet inference runs in tiers, unified behind a LiteLLM gateway on the box
+(`litellm.service`, `http://127.0.0.1:4000`, localhost-only, auth via master key).
+Full docs: `/root/labs/litellm-poc/README.md`.
+
+| Tier | Hardware | Engine | Model | Role |
+|------|----------|--------|-------|------|
+| big local | Vast RTX 5090 (ephemeral) | vLLM | Qwen3.6-27B-NVFP4 | mid fallback, on-demand |
+| always-on | box 8-core CPU | Ollama (llama.cpp inside) | qwen3:8b + bge-m3 | safety net + fleet embeddings |
+| cloud | OpenRouter | — | qwen3-235b | graphiti extraction |
+| routing | box | Ryō daemon chain (hand-rolled) **or** LiteLLM gateway `:4000` | — | claude-p → vLLM → Ollama |
+
+The gateway exposes one OpenAI `/v1` API with models `big-qwen` (vLLM), `local-qwen` (Ollama),
+`cloud-qwen` (OpenRouter), `embed` (bge-m3), and auto-fallback `big-qwen → local-qwen`. It is the
+standard-proxy replacement for the daemon's hand-rolled `ORACLE_FALLBACK_ENGINE` chain (not yet
+wired into the Ryō daemon / hermes).
