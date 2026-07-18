@@ -119,7 +119,8 @@ class QueueService:
                     await process_func()
                 except Exception as e:
                     logger.error(
-                        f'Error processing queued episode for group_id {group_id}: {str(e)}'
+                        f'Error processing queued episode for group_id {group_id}: {str(e)}',
+                        exc_info=True,
                     )
                 finally:
                     # Mark the task as done regardless of success/failure
@@ -231,7 +232,10 @@ class QueueService:
                 logger.info(f'Successfully processed episode {uuid} for group {group_id}')
 
             except Exception as e:
-                logger.error(f'Failed to process episode {uuid} for group {group_id}: {str(e)}')
+                logger.error(
+                    f'Failed to process episode {uuid} for group {group_id}: {str(e)}',
+                    exc_info=True,
+                )
                 raise
 
         # Use the existing add_episode_task method to queue the processing
