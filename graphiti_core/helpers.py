@@ -15,6 +15,8 @@ limitations under the License.
 """
 
 import asyncio
+import json
+import logging
 import os
 import re
 from collections.abc import Coroutine
@@ -218,3 +220,46 @@ def validate_excluded_entity_types(
         )
 
     return True
+
+
+# --- graph property sanitization (shared by bulk and single save paths) -------------------
+# FalkorDB rejects any property value that is not a primitive or an array of primitives — and it
+# fails the WHOLE query, so one nested dict from an LLM attribute used to cost every entity and
+# edge in the write. Proven culprit (traceback + warning log, 2026-07-17): the attribute-extraction
+# LLM sometimes echoes the input structure back as {"attributes": {...}}; pydantic ignores the
+# extra key during validation, the overlay merge keeps it, and the dict rides into the save.
+_GRAPH_PRIMITIVE_TYPES = (str, int, float, bool)
+_sanitize_logger = logging.getLogger(__name__)
+
+
+def sanitize_graph_property(value: Any) -> tuple[Any, bool]:
+    """Coerce a property value to something FalkorDB accepts; returns (value, was_coerced).
+
+    Dicts and mixed lists become JSON strings (data preserved, queryable as text); primitives,
+    primitive lists, None (every successful edge write today carries expired_at=None), and
+    datetimes (the driver serializes those) pass through untouched.
+    """
+    if value is None or isinstance(value, (_GRAPH_PRIMITIVE_TYPES, datetime)):
+        return value, False
+    if isinstance(value, (list, tuple)):
+        if all(item is None or isinstance(item, _GRAPH_PRIMITIVE_TYPES) for item in value):
+            return list(value), False
+        return json.dumps(value, ensure_ascii=False, default=str), True
+    return json.dumps(value, ensure_ascii=False, default=str), True
+
+
+def spread_sanitized_attributes(
+    target: dict[str, Any], attributes: dict[str, Any] | None, *, uuid: str, kind: str
+) -> None:
+    """Merge attributes into a save payload without overwriting explicit fields."""
+    for k, v in (attributes or {}).items():
+        if k in target:
+            continue
+        clean, coerced = sanitize_graph_property(v)
+        if coerced:
+            # uuid + field name only — attribute VALUES may carry user content.
+            _sanitize_logger.warning(
+                'non-primitive attribute JSON-encoded for %s %s: field=%s type=%s',
+                kind, uuid, k, type(v).__name__,
+            )
+        target[k] = clean

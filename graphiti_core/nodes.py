@@ -32,7 +32,7 @@ from graphiti_core.driver.driver import (
 )
 from graphiti_core.embedder import EmbedderClient
 from graphiti_core.errors import NodeNotFoundError
-from graphiti_core.helpers import parse_db_date, validate_node_labels
+from graphiti_core.helpers import parse_db_date, spread_sanitized_attributes, validate_node_labels
 from graphiti_core.models.nodes.node_db_queries import (
     COMMUNITY_NODE_RETURN,
     COMMUNITY_NODE_RETURN_NEPTUNE,
@@ -567,9 +567,7 @@ class EntityNode(Node):
                 **entity_data,
             )
         else:
-            for k, v in (self.attributes or {}).items():
-                if k not in entity_data:
-                    entity_data[k] = v
+            spread_sanitized_attributes(entity_data, self.attributes, uuid=self.uuid, kind='node')
             labels = ':'.join(self.labels + ['Entity'])
 
             result = await driver.execute_query(

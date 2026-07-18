@@ -148,42 +148,12 @@ async def add_nodes_and_edges_bulk(
         await session.close()
 
 
-_PRIMITIVE_TYPES = (str, int, float, bool)
-
-
-def sanitize_graph_property(value: Any) -> tuple[Any, bool]:
-    """Coerce a property value to something FalkorDB accepts; (value, was_coerced).
-
-    FalkorDB rejects the whole write transaction when any property value is not a
-    primitive or an array of primitives — one nested dict from an LLM attribute used
-    to cost the episode's entire entity/edge write. Dicts and mixed lists become JSON
-    strings (data preserved, queryable as text); primitives, primitive lists, None,
-    and datetimes (the driver serializes those) pass through untouched.
-    """
-    if value is None or isinstance(value, (_PRIMITIVE_TYPES, datetime)):
-        return value, False
-    if isinstance(value, (list, tuple)):
-        if all(item is None or isinstance(item, _PRIMITIVE_TYPES) for item in value):
-            return list(value), False
-        return json.dumps(value, ensure_ascii=False, default=str), True
-    return json.dumps(value, ensure_ascii=False, default=str), True
-
-
-def _spread_sanitized_attributes(
-    target: dict[str, Any], attributes: dict[str, Any] | None, *, uuid: str, kind: str
-) -> None:
-    """Merge attributes into a save payload without overwriting explicit fields."""
-    for k, v in (attributes or {}).items():
-        if k in target:
-            continue
-        clean, coerced = sanitize_graph_property(v)
-        if coerced:
-            # uuid + field name only — attribute VALUES may carry user content.
-            logger.warning(
-                'non-primitive attribute JSON-encoded for %s %s: field=%s type=%s',
-                kind, uuid, k, type(v).__name__,
-            )
-        target[k] = clean
+# sanitize_graph_property / spread_sanitized_attributes live in graphiti_core.helpers
+# (bulk_utils imports nodes, so a shared helper cannot live here without a cycle).
+from graphiti_core.helpers import (  # noqa: E402
+    sanitize_graph_property,
+    spread_sanitized_attributes as _spread_sanitized_attributes,
+)
 
 
 async def add_nodes_and_edges_bulk_tx(
