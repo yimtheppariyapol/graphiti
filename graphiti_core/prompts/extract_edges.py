@@ -53,7 +53,9 @@ class Edge(BaseModel):
 
 
 class ExtractedEdges(BaseModel):
-    edges: list[Edge]
+    # default_factory, not required: a response missing the edges key must degrade to
+    # no-edges-this-round, never kill the episode (same rationale as NodeResolutions).
+    edges: list[Edge] = Field(default_factory=list)
 
 
 class EdgeTimestamps(BaseModel):

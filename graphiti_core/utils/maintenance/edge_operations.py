@@ -114,6 +114,22 @@ def build_community_edges(
     return edges
 
 
+def _normalize_edges_response(llm_response):
+    """qwen-family extractors sometimes return the bare edges array instead of {'edges': [...]};
+    **-splatting a list is a TypeError that dropped the WHOLE episode (memory-canary caught it
+    live, 2026-08-04). Same degrade family as the NodeResolutions fix: losing one extraction
+    round beats losing the episode."""
+    if isinstance(llm_response, list):
+        return {'edges': llm_response}
+    if not isinstance(llm_response, dict):
+        logger.warning(
+            'extract_edges: unusable LLM response type %s - degrading to no edges',
+            type(llm_response).__name__,
+        )
+        return {'edges': []}
+    return llm_response
+
+
 async def extract_edges(
     clients: GraphitiClients,
     episode: EpisodicNode | list[EpisodicNode],
@@ -206,6 +222,7 @@ async def extract_edges(
         group_id=group_id or primary_episode.group_id,
         prompt_name='extract_edges.edge',
     )
+    llm_response = _normalize_edges_response(llm_response)
     all_edges_data = ExtractedEdges(**llm_response).edges
 
     # Validate entity names
