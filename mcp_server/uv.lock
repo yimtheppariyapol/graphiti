@@ -549,7 +549,7 @@ name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -764,8 +764,8 @@ wheels = [
 
 [[package]]
 name = "graphiti-core"
-version = "0.29.2+fleet.12"
-source = { path = "/root/labs/fleet-wheels/graphiti_core-0.29.2+fleet.12-py3-none-any.whl" }
+version = "0.29.2+fleet.13"
+source = { path = "/root/labs/fleet-wheels/graphiti_core-0.29.2+fleet.13-py3-none-any.whl" }
 dependencies = [
     { name = "neo4j" },
     { name = "numpy" },
@@ -776,7 +776,7 @@ dependencies = [
     { name = "tenacity" },
 ]
 wheels = [
-    { filename = "graphiti_core-0.29.2+fleet.12-py3-none-any.whl", hash = "sha256:c0902b53e61938e089e5302d5300388b6f405f0fcca49a54506c411ae3cfe435" },
+    { filename = "graphiti_core-0.29.2+fleet.13-py3-none-any.whl", hash = "sha256:b882c9ee2c69ddc91f971677bb1bfb43e08c6fb2e7495c16432f5879e6334871" },
 ]
 
 [package.optional-dependencies]
@@ -1313,7 +1313,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.107.1" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.25.3" },
     { name = "google-genai", marker = "extra == 'providers'", specifier = ">=2.8.0" },
-    { name = "graphiti-core", extras = ["falkordb"], path = "/root/labs/fleet-wheels/graphiti_core-0.29.2+fleet.12-py3-none-any.whl" },
+    { name = "graphiti-core", extras = ["falkordb"], path = "/root/labs/fleet-wheels/graphiti_core-0.29.2+fleet.13-py3-none-any.whl" },
     { name = "groq", marker = "extra == 'providers'", specifier = ">=1.2.0" },
     { name = "mcp", specifier = ">=1.27.2,<2" },
     { name = "openai", specifier = ">=2.41.0" },
