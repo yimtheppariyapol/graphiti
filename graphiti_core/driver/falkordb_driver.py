@@ -245,8 +245,15 @@ class FalkorDriver(GraphDriver):
         try:
             result = await graph.query(cypher_query_, params)  # type: ignore[reportUnknownArgumentType]
         except Exception as e:
-            if 'already indexed' in str(e):
-                # check if index already exists
+            if any(
+                marker in str(e)
+                for marker in (
+                    'already indexed',
+                    'Stopwords are already set',
+                    'Can not override index configuration',
+                )
+            ):
+                # index (or its fulltext config) already exists -- creation is idempotent
                 logger.info(f'Index already exists: {e}')
                 return None
             logger.error(f'Error executing FalkorDB query: {e}\n{cypher_query_}\n{params}')
