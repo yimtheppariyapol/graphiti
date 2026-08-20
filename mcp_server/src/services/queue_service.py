@@ -205,7 +205,65 @@ class QueueService:
             raise RuntimeError('Queue service not initialized. Call initialize() first.')
 
         async def process_episode():
-            """Process the episode using the graphiti client."""
+            """Process the episode using the graphiti client.
+
+            Retry + dead-letter added 2026-08-20. Before this, a single FalkorDB
+            'Query timed out' (GRAPH.CONFIG TIMEOUT=120000) made the consumer in
+            _process_episode_queue log the error, call task_done() and move on, so the
+            episode was DROPPED. Measured: 29 drops in 7 days, 20 episodes confirmed
+            absent from the graph while their ledger entries still read 'pending', which
+            reads as deferred rather than lost. A transient write failure must not be
+            indistinguishable from a permanent one: retry a few times, and if it still
+            will not land, write the whole payload to a dead-letter file so the episode
+            can be replayed instead of vanishing.
+            """
+            attempts = 3
+            for attempt in range(1, attempts + 1):
+                try:
+                    await _do_add_episode()
+                    if attempt > 1:
+                        logger.info(
+                            f'Episode {uuid} for group {group_id} succeeded on attempt {attempt}'
+                        )
+                    return
+                except Exception as e:
+                    if attempt < attempts:
+                        delay = 5 * (2 ** (attempt - 1))
+                        logger.warning(
+                            f'Attempt {attempt}/{attempts} failed for episode {uuid} in group '
+                            f'{group_id}: {e}; retrying in {delay}s'
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    # Final failure: capture before raising, or the payload is gone for good.
+                    try:
+                        import json as _json
+                        from pathlib import Path as _Path
+                        dl = _Path('/root/logs/memory-deadletter.jsonl')
+                        dl.parent.mkdir(parents=True, exist_ok=True)
+                        with dl.open('a', encoding='utf-8') as fh:
+                            fh.write(_json.dumps({
+                                'ts': datetime.now(timezone.utc).isoformat(),
+                                'group_id': group_id,
+                                'uuid': uuid,
+                                'name': name,
+                                'source_description': source_description,
+                                'content': content,
+                                'error': str(e),
+                                'attempts': attempts,
+                            }, ensure_ascii=False) + '\n')
+                        logger.error(
+                            f'Failed to process episode {uuid} for group {group_id} after '
+                            f'{attempts} attempts: {str(e)}; payload written to {dl} for replay'
+                        )
+                    except Exception as dl_err:
+                        logger.error(
+                            f'DEAD-LETTER WRITE FAILED for episode {uuid} in group {group_id}: '
+                            f'{dl_err}. The episode is lost.'
+                        )
+                    raise
+
+        async def _do_add_episode():
             try:
                 logger.info(f'Processing episode {uuid} for group {group_id}')
 
@@ -232,8 +290,11 @@ class QueueService:
                 logger.info(f'Successfully processed episode {uuid} for group {group_id}')
 
             except Exception as e:
-                logger.error(
-                    f'Failed to process episode {uuid} for group {group_id}: {str(e)}',
+                # Per-attempt only. Deliberately NOT the phrase 'Failed to process episode':
+                # that phrase is the fleet-memory-monitor drop counter and must fire exactly
+                # once per episode that is actually lost, not once per retry (2026-08-20).
+                logger.warning(
+                    f'Attempt error for episode {uuid} in group {group_id}: {str(e)}',
                     exc_info=True,
                 )
                 raise
