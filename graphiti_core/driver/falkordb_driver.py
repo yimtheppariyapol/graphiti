@@ -409,6 +409,9 @@ class FalkorDriver(GraphDriver):
                 '|': ' ',
                 '/': ' ',
                 '\\': ' ',
+                # fleet.15: a backtick at the start of a token (`stty, from code in an episode) or
+                # on its own is a RediSearch syntax error that fails the whole extraction.
+                '`': ' ',
             }
         )
         sanitized = query.translate(separator_map)
@@ -448,6 +451,9 @@ class FalkorDriver(GraphDriver):
 
         # Remove stopwords and empty tokens from the sanitized query
         query_words = sanitized_query.split()
+        # fleet.15: a leading/trailing '_' (or a bare '_') is also a RediSearch syntax error. Strip it at
+        # the token edges only, so identifiers like memory_host keep matching as one token.
+        query_words = [word.strip('_') for word in query_words]
         filtered_words = [word for word in query_words if word and word.lower() not in STOPWORDS]
         sanitized_query = ' | '.join(filtered_words)
 
