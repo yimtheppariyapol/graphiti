@@ -189,6 +189,11 @@ async def edge_fulltext_search(
     group_ids: list[str] | None = None,
     limit=RELEVANT_SCHEMA_LIMIT,
 ) -> list[EntityEdge]:
+    # fleet.14: `e.uuid IN []` can never match, but FalkorDB still runs the whole fulltext/vector
+    # scan before filtering -- measured 60s per call on 17.6k RELATES_TO edges, pinning 8 threads.
+    # resolve_extracted_edges passes [] whenever a node pair has no edge yet (the common case).
+    if search_filter.edge_uuids is not None and len(search_filter.edge_uuids) == 0:
+        return []
     if driver.search_interface:
         return await driver.search_interface.edge_fulltext_search(
             driver, query, search_filter, group_ids, limit
@@ -307,6 +312,11 @@ async def edge_similarity_search(
     limit: int = RELEVANT_SCHEMA_LIMIT,
     min_score: float = DEFAULT_MIN_SCORE,
 ) -> list[EntityEdge]:
+    # fleet.14: `e.uuid IN []` can never match, but FalkorDB still runs the whole fulltext/vector
+    # scan before filtering -- measured 60s per call on 17.6k RELATES_TO edges, pinning 8 threads.
+    # resolve_extracted_edges passes [] whenever a node pair has no edge yet (the common case).
+    if search_filter.edge_uuids is not None and len(search_filter.edge_uuids) == 0:
+        return []
     if driver.search_interface:
         return await driver.search_interface.edge_similarity_search(
             driver,
@@ -453,6 +463,11 @@ async def edge_bfs_search(
     group_ids: list[str] | None = None,
     limit: int = RELEVANT_SCHEMA_LIMIT,
 ) -> list[EntityEdge]:
+    # fleet.14: `e.uuid IN []` can never match, but FalkorDB still runs the whole fulltext/vector
+    # scan before filtering -- measured 60s per call on 17.6k RELATES_TO edges, pinning 8 threads.
+    # resolve_extracted_edges passes [] whenever a node pair has no edge yet (the common case).
+    if search_filter.edge_uuids is not None and len(search_filter.edge_uuids) == 0:
+        return []
     if driver.search_interface:
         try:
             return await driver.search_interface.edge_bfs_search(
