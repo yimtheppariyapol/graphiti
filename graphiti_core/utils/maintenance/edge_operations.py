@@ -743,6 +743,8 @@ async def resolve_extracted_edge(
     llm_response = await llm_client.generate_response(
         prompt_library.dedupe_edges.resolve_edge(context),
         response_model=EdgeDuplicate,
+        # fleet.16: this two-index-list response should never consume the global 16K cap.
+        max_tokens=256,
         model_size=ModelSize.small,
         prompt_name='dedupe_edges.resolve_edge',
     )

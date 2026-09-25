@@ -317,6 +317,7 @@ async def test_resolve_extracted_edge_uses_integer_indices_for_duplicates(mock_l
 
     # Verify LLM was called
     mock_llm_client.generate_response.assert_called_once()
+    assert mock_llm_client.generate_response.await_args.kwargs['max_tokens'] == 256
 
     # Verify the system correctly identified duplicates using integer indices
     # The LLM returned [0, 1], so related_edge_0 and related_edge_1 should be marked as duplicates

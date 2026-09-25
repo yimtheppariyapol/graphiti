@@ -917,4 +917,5 @@ async def test_batch_summaries_calls_llm_for_long_summary():
 
     # LLM should have been called to condense the long summary
     llm_client.generate_response.assert_awaited_once()
+    assert llm_client.generate_response.await_args.kwargs['max_tokens'] == 2304
     assert node.summary == 'Condensed summary'

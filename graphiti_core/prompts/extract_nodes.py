@@ -18,7 +18,7 @@ from typing import Any, Protocol, TypedDict
 
 from pydantic import BaseModel, Field
 
-from graphiti_core.utils.text_utils import MAX_SUMMARY_CHARS
+from graphiti_core.utils.text_utils import MAX_LLM_SUMMARY_CHARS, MAX_SUMMARY_CHARS
 
 from .models import Message, PromptFunction, PromptVersion
 from .prompt_helpers import to_prompt_json
@@ -43,17 +43,24 @@ class ExtractedEntities(BaseModel):
 
 
 class EntitySummary(BaseModel):
-    summary: str = Field(..., description='Summary of the entity')
+    summary: str = Field(
+        ..., max_length=MAX_LLM_SUMMARY_CHARS, description='Summary of the entity'
+    )
 
 
 class SummarizedEntity(BaseModel):
     name: str = Field(..., description='Name of the entity being summarized')
-    summary: str = Field(..., description='Updated summary for the entity')
+    # fleet.16: admit the measured live range but reject runaway model output.
+    summary: str = Field(
+        ..., max_length=MAX_LLM_SUMMARY_CHARS, description='Updated summary for the entity'
+    )
 
 
 class SummarizedEntities(BaseModel):
     summaries: list[SummarizedEntity] = Field(
         ...,
+        # fleet.16: summary flights contain at most four candidate entities.
+        max_length=4,
         description='List of entity summaries. Only include entities that need summary updates.',
     )
 

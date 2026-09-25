@@ -60,7 +60,9 @@ from graphiti_core.utils.text_utils import (
 logger = logging.getLogger(__name__)
 
 # Maximum number of nodes to summarize in a single LLM call
-MAX_NODES = 30
+# fleet.16: four worst-case measured Thai summaries fit the bounded 8K-token
+# response budget with room for names and JSON structure.
+MAX_NODES = 4
 NODE_DEDUP_CANDIDATE_LIMIT = 15
 NODE_DEDUP_COSINE_MIN_SCORE = 0.6
 
@@ -991,6 +993,10 @@ async def _process_summary_flight(
     llm_response = await llm_client.generate_response(
         prompt,
         response_model=SummarizedEntities,
+        # fleet.16: a 2K-character Thai summary may need 1.5K+ tokens. Give a
+        # one-node flight 2,304 tokens and scale batches, but stop loops at half
+        # the global 16K allowance.
+        max_tokens=min(8192, 256 + 2048 * len(nodes)),
         model_size=ModelSize.small,
         group_id=group_id,
         prompt_name=prompt_name,

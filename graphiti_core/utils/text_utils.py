@@ -25,6 +25,10 @@ if TYPE_CHECKING:
 # Maximum length for entity/community summaries
 MAX_SUMMARY_CHARS = 1000
 
+# fleet.16: response validation must admit the observed live range (up to 1,999
+# characters) while rejecting the 38K+ character looping failures well before persist.
+MAX_LLM_SUMMARY_CHARS = 8192
+
 
 def truncate_at_sentence(text: str, max_chars: int) -> str:
     """

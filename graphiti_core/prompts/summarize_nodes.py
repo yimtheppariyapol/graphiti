@@ -18,7 +18,7 @@ from typing import Any, Protocol, TypedDict
 
 from pydantic import BaseModel, Field
 
-from graphiti_core.utils.text_utils import MAX_SUMMARY_CHARS
+from graphiti_core.utils.text_utils import MAX_LLM_SUMMARY_CHARS, MAX_SUMMARY_CHARS
 
 from .models import Message, PromptFunction, PromptVersion
 from .prompt_helpers import to_prompt_json
@@ -28,6 +28,7 @@ from .snippets import summary_instructions
 class Summary(BaseModel):
     summary: str = Field(
         ...,
+        max_length=MAX_LLM_SUMMARY_CHARS,
         description=(
             f'Summary containing the important information about the entity. '
             f'Under {MAX_SUMMARY_CHARS} characters'
@@ -36,7 +37,12 @@ class Summary(BaseModel):
 
 
 class SummaryDescription(BaseModel):
-    description: str = Field(..., description='One sentence description of the provided summary')
+    # fleet.16: prose instructions did not stop looping output; validation must reject it.
+    description: str = Field(
+        ...,
+        max_length=MAX_LLM_SUMMARY_CHARS,
+        description='One sentence description of the provided summary',
+    )
 
 
 class Prompt(Protocol):

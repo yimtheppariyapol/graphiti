@@ -162,18 +162,40 @@ class OpenAIGenericClient(LLMClient):
             choices = getattr(response, 'choices', None) or []
             if not choices:
                 raise EmptyResponseError('LLM returned no choices')
-            message = getattr(choices[0], 'message', None)
+            choice = choices[0]
+            message = getattr(choice, 'message', None)
             if message is None:
-                finish_reason = getattr(choices[0], 'finish_reason', None)
+                finish_reason = getattr(choice, 'finish_reason', None)
                 raise EmptyResponseError(f'LLM returned no message; finish_reason={finish_reason}')
             result = message.content or ''
+            finish_reason = getattr(choice, 'finish_reason', None)
+            # fleet.16: a capped structured response is incomplete, so fail with the
+            # stable poison-queue signature instead of retrying JSON parsing indefinitely.
+            if finish_reason == 'length':
+                raise EmptyResponseError(
+                    'LLM response hit the token cap '
+                    f'(finish_reason=length, {len(result)} chars) — '
+                    'raise max_tokens or shrink the prompt'
+                )
             # An empty body (refusal, length finish_reason, or a flaky endpoint) would make
             # json.loads raise a cryptic JSONDecodeError; surface a clear error instead.
             if not result:
                 raise EmptyResponseError('LLM returned an empty response')
             # Many OpenAI-compatible/local models wrap JSON in a ```json fence even under a
             # structured response_format; strip it before parsing.
-            return json.loads(self._strip_code_fences(result))
+            try:
+                return json.loads(self._strip_code_fences(result))
+            except json.JSONDecodeError:
+                # fleet.16: retain a small response fingerprint for diagnosing loops
+                # without flooding the journal with the full (potentially huge) body.
+                logger.error(
+                    'RAWJSONFAIL finish=%s len=%d head=%r tail=%r',
+                    finish_reason,
+                    len(result),
+                    result[:180],
+                    result[-120:],
+                )
+                raise
         except openai.RateLimitError as e:
             raise RateLimitError from e
         except Exception as e:
@@ -230,6 +252,8 @@ class OpenAIGenericClient(LLMClient):
                     messages, response_model, max_tokens=max_tokens, model_size=model_size
                 )
             except Exception as e:
+                # fleet.16: prompt identity makes runaway calls attributable in the journal.
+                logger.error('Error in generating LLM response prompt_name=%s: %s', prompt_name, e)
                 span.set_status('error', str(e))
                 span.record_exception(e)
                 raise

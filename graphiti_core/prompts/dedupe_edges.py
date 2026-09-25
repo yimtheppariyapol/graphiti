@@ -22,12 +22,16 @@ from .models import Message, PromptFunction, PromptVersion
 
 
 class EdgeDuplicate(BaseModel):
+    # fleet.16: both lists select from finite search candidates. Keep a generous hard
+    # ceiling for override candidates; index range validation below remains candidate-exact.
     duplicate_facts: list[int] = Field(
         ...,
+        max_length=100,
         description='List of idx values of duplicate facts (only from EXISTING FACTS range). Empty list if none.',
     )
     contradicted_facts: list[int] = Field(
         ...,
+        max_length=100,
         description='List of idx values of contradicted facts (from full idx range). Empty list if none.',
     )
 

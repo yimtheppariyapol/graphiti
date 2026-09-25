@@ -12,17 +12,23 @@ from graphiti_core.prompts.models import Message
 
 
 class DummyChatCompletions:
-    def __init__(self, content: str = '{}', error: Exception | None = None):
+    def __init__(
+        self,
+        content: str = '{}',
+        error: Exception | None = None,
+        finish_reason: str = 'stop',
+    ):
         self.create_calls: list[dict] = []
         self._content = content
         self._error = error
+        self._finish_reason = finish_reason
 
     async def create(self, **kwargs):
         self.create_calls.append(kwargs)
         if self._error is not None:
             raise self._error
         message = SimpleNamespace(content=self._content)
-        choice = SimpleNamespace(message=message)
+        choice = SimpleNamespace(message=message, finish_reason=self._finish_reason)
         return SimpleNamespace(choices=[choice])
 
 
@@ -47,8 +53,13 @@ def _messages() -> list[Message]:
     ]
 
 
-def _make_client(content: str = '{"foo": "bar"}', error: Exception | None = None, **kwargs):
-    completions = DummyChatCompletions(content=content, error=error)
+def _make_client(
+    content: str = '{"foo": "bar"}',
+    error: Exception | None = None,
+    finish_reason: str = 'stop',
+    **kwargs,
+):
+    completions = DummyChatCompletions(content=content, error=error, finish_reason=finish_reason)
     client = OpenAIGenericClient(
         config=LLMConfig(api_key='test', model='test-model'),
         client=DummyClient(completions),
@@ -136,6 +147,33 @@ async def test_empty_content_raises_empty_response_error():
         await client._generate_response(_messages(), response_model=ResponseModel)
 
 
+@pytest.mark.asyncio
+async def test_length_finish_reason_raises_token_cap_error():
+    client, _ = _make_client(content='{"foo": "unfinished', finish_reason='length')
+
+    with pytest.raises(EmptyResponseError, match='hit the token cap'):
+        await client._generate_response(_messages(), response_model=ResponseModel)
+
+
+@pytest.mark.asyncio
+async def test_stop_finish_reason_parses_normally():
+    client, _ = _make_client(content='{"foo": "bar"}', finish_reason='stop')
+
+    assert await client._generate_response(_messages(), response_model=ResponseModel) == {
+        'foo': 'bar'
+    }
+
+
+@pytest.mark.asyncio
+async def test_invalid_json_logs_raw_response_fingerprint(caplog):
+    client, _ = _make_client(content='not-json', finish_reason='stop')
+
+    with caplog.at_level('ERROR'), pytest.raises(json.JSONDecodeError):
+        await client._generate_response(_messages(), response_model=ResponseModel)
+
+    assert "RAWJSONFAIL finish=stop len=8 head='not-json' tail='not-json'" in caplog.text
+
+
 def test_empty_response_error_is_retryable():
     # An empty body is treated as a transient provider hiccup (common on local/compatible
     # endpoints), so the base retry wrapper retries it rather than failing on first try.
@@ -157,14 +195,17 @@ async def test_strips_markdown_code_fence_before_parsing():
 
 
 @pytest.mark.asyncio
-async def test_non_retryable_error_is_not_retried():
+async def test_non_retryable_error_is_not_retried(caplog):
     # The old hand-rolled re-prompt loop is gone. Retry is now delegated to the base
     # tenacity wrapper, which only retries transient errors (RateLimitError /
     # JSONDecodeError). A non-retryable error (e.g. ValueError) propagates after a
     # single create call.
     client, completions = _make_client(error=ValueError('bad response'))
 
-    with pytest.raises(ValueError):
-        await client.generate_response(_messages(), response_model=ResponseModel)
+    with caplog.at_level('ERROR'), pytest.raises(ValueError):
+        await client.generate_response(
+            _messages(), response_model=ResponseModel, prompt_name='fleet16.test_prompt'
+        )
 
     assert len(completions.create_calls) == 1
+    assert 'prompt_name=fleet16.test_prompt' in caplog.text

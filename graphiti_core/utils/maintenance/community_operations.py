@@ -163,10 +163,14 @@ async def generate_summary_description(llm_client: LLMClient, summary: str) -> s
     llm_response = await llm_client.generate_response(
         prompt_library.summarize_nodes.summary_description(context),
         response_model=SummaryDescription,
+        # fleet.16: Thai text can approach one token per character; allow the measured
+        # 2K-character range plus JSON overhead without exposing the global 16K cap.
+        max_tokens=2304,
         prompt_name='summarize_nodes.summary_description',
     )
 
-    description = llm_response.get('description', '')
+    # fleet.16: validate locally as well as advertising the non-strict provider schema.
+    description = SummaryDescription(**llm_response).description
 
     return description
 
