@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -6,13 +7,43 @@ import pytest
 from pydantic import BaseModel
 
 from graphiti_core.edges import EntityEdge
+from graphiti_core.llm_client.errors import EmptyResponseError
 from graphiti_core.nodes import EntityNode, EpisodicNode
 from graphiti_core.search.search_config import SearchResults
 from graphiti_core.utils.maintenance.edge_operations import (
+    _extract_edge_attributes,
     extract_edges,
     resolve_extracted_edge,
     resolve_extracted_edges,
 )
+
+
+class EdgeAttributeTestType(BaseModel):
+    role: str | None = None
+
+
+@pytest.mark.asyncio
+async def test_edge_attribute_failure_keeps_prior_and_is_capped(
+    mock_llm_client, mock_extracted_edge, mock_current_episode, caplog
+):
+    mock_extracted_edge.name = 'SECRET-EDGE-NAME'
+    mock_extracted_edge.attributes = {'role': 'prior'}
+    mock_llm_client.generate_response.side_effect = EmptyResponseError('hit the token cap')
+
+    with caplog.at_level(logging.WARNING):
+        await _extract_edge_attributes(
+            mock_llm_client,
+            mock_extracted_edge,
+            mock_current_episode,
+            EdgeAttributeTestType,
+        )
+
+    assert mock_extracted_edge.attributes == {'role': 'prior'}
+    assert mock_llm_client.generate_response.await_args.kwargs['max_tokens'] == 768
+    assert mock_extracted_edge.uuid in caplog.text
+    assert 'entity_type=EdgeAttributeTestType' in caplog.text
+    assert 'prompt=extract_edges.extract_attributes' in caplog.text
+    assert 'SECRET-EDGE-NAME' not in caplog.text
 
 
 @pytest.fixture

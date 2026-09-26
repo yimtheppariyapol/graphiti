@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from time import time
@@ -26,6 +27,7 @@ from graphiti_core.graphiti_types import GraphitiClients
 from graphiti_core.helpers import semaphore_gather
 from graphiti_core.llm_client import LLMClient
 from graphiti_core.llm_client.config import ModelSize
+from graphiti_core.llm_client.errors import EmptyResponseError
 from graphiti_core.nodes import (
     EntityNode,
     EpisodeType,
@@ -67,6 +69,11 @@ NODE_DEDUP_CANDIDATE_LIMIT = 15
 NODE_DEDUP_COSINE_MIN_SCORE = 0.6
 
 NodeSummaryFilter = Callable[[EntityNode], Awaitable[bool]]
+
+# Production entity types contain at most two 250-character string attributes.
+# At a conservative one token per Thai character, 500 payload tokens plus roughly
+# 60 tokens of JSON keys/syntax still leave 208 tokens (37%) of headroom.
+ATTRIBUTE_EXTRACTION_MAX_TOKENS = 768
 
 
 async def extract_nodes(
@@ -803,47 +810,50 @@ async def _extract_entity_attributes(
         previous_episodes=previous_episodes,
     )
 
-    llm_response = await llm_client.generate_response(
-        prompt_library.extract_nodes.extract_attributes(attributes_context),
-        response_model=entity_type,
-        model_size=ModelSize.small,
-        group_id=node.group_id,
-        prompt_name='extract_nodes.extract_attributes',
-        attribute_extraction=True,
-    )
-
-    # Overlay merge: cap-dropped or LLM-omitted fields keep prior values.
-    # See attribute_utils for the merge_mode contract; the edge path uses 'replace'.
-    merged, _ = apply_capped_attributes(
-        llm_response,
-        entity_type,
-        node.attributes,
-        merge_mode='overlay',
-        prompt_name='extract_nodes.extract_attributes',
-        entity_uuid=node.uuid,
-        group_id=node.group_id,
-    )
-
-    # Shape validation only — we discard the validated instance because returning
-    # `model_dump()` would expand defaults across all fields and clobber prior
-    # values that the merge above just preserved.
+    prompt_name = 'extract_nodes.extract_attributes'
     try:
-        entity_type(**merged)
-    except ValidationError as e:
-        # Only tolerate omitted (missing) typed fields — a non-Gemini extraction model
-        # occasionally drops one, and losing the whole episode over that loses real memory.
-        # Any OTHER violation (e.g. a Field(max_length=...) that the cap logic deliberately
-        # left for this check to reject) must still fail — don't defeat the schema/cap contract.
-        if any(err.get('type') != 'missing' for err in e.errors()):
-            raise
-        # Log identifiers + typed-field names only — never node.name or the raw error, whose
-        # strings embed offending input values (PII). (Yim 2026-07-08)
-        missing_fields = ', '.join('.'.join(str(x) for x in err['loc']) for err in e.errors())
-        logger.warning(
-            f'entity attribute shape validation soft-failed for {node.uuid}; '
-            f'kept best-effort attributes (LLM-omitted typed fields: {missing_fields})'
+        llm_response = await llm_client.generate_response(
+            prompt_library.extract_nodes.extract_attributes(attributes_context),
+            response_model=entity_type,
+            max_tokens=ATTRIBUTE_EXTRACTION_MAX_TOKENS,
+            model_size=ModelSize.small,
+            group_id=node.group_id,
+            prompt_name=prompt_name,
+            attribute_extraction=True,
         )
-
+        # Overlay merge: cap-dropped or LLM-omitted fields keep prior values.
+        # See attribute_utils for the merge_mode contract; the edge path uses 'replace'.
+        merged, _ = apply_capped_attributes(
+            llm_response,
+            entity_type,
+            node.attributes,
+            merge_mode='overlay',
+            prompt_name=prompt_name,
+            entity_uuid=node.uuid,
+            group_id=node.group_id,
+        )
+        # Shape validation only — discard the instance to avoid expanding defaults.
+        try:
+            entity_type(**merged)
+        except ValidationError as e:
+            if any(err.get('type') != 'missing' for err in e.errors()):
+                raise
+            missing_fields = ', '.join('.'.join(str(x) for x in err['loc']) for err in e.errors())
+            logger.warning(
+                f'entity attribute shape validation soft-failed for {node.uuid}; '
+                f'kept best-effort attributes (LLM-omitted typed fields: {missing_fields})'
+            )
+    except (EmptyResponseError, json.JSONDecodeError, ValidationError):
+        # A malformed/capped response for one entity must not discard the episode.
+        # Deliberately log identifiers only: exception text can contain raw PII.
+        logger.warning(
+            'attribute extraction failed; kept existing attributes '
+            'uuid=%s entity_type=%s prompt=%s',
+            node.uuid,
+            entity_type.__name__,
+            prompt_name,
+        )
+        return dict(node.attributes)
     return merged
 
 

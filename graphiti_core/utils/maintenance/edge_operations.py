@@ -14,11 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import json
 import logging
 from datetime import datetime
 from time import time
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing_extensions import LiteralString
 
 from graphiti_core.driver.driver import GraphDriver, GraphProvider
@@ -32,6 +33,7 @@ from graphiti_core.graphiti_types import GraphitiClients
 from graphiti_core.helpers import semaphore_gather
 from graphiti_core.llm_client import LLMClient
 from graphiti_core.llm_client.config import ModelSize
+from graphiti_core.llm_client.errors import EmptyResponseError
 from graphiti_core.nodes import CommunityNode, EntityNode, EpisodicNode
 from graphiti_core.prompts import prompt_library
 from graphiti_core.prompts.dedupe_edges import EdgeDuplicate
@@ -47,6 +49,51 @@ from graphiti_core.utils.maintenance.dedup_helpers import _normalize_string_exac
 from graphiti_core.utils.text_utils import concatenate_episodes
 
 logger = logging.getLogger(__name__)
+
+ATTRIBUTE_EXTRACTION_MAX_TOKENS = 768
+
+
+async def _extract_edge_attributes(
+    llm_client: LLMClient,
+    edge: EntityEdge,
+    episode: EpisodicNode,
+    edge_model: type[BaseModel],
+) -> None:
+    prompt_name = 'extract_edges.extract_attributes'
+    context = {
+        'fact': edge.fact,
+        'reference_time': episode.valid_at if episode is not None else None,
+        'existing_attributes': edge.attributes,
+    }
+    try:
+        response = await llm_client.generate_response(
+            prompt_library.extract_edges.extract_attributes(context),
+            response_model=edge_model,
+            max_tokens=ATTRIBUTE_EXTRACTION_MAX_TOKENS,
+            model_size=ModelSize.small,
+            prompt_name=prompt_name,
+            attribute_extraction=True,
+        )
+        merged, _ = apply_capped_attributes(
+            response,
+            edge_model,
+            edge.attributes,
+            merge_mode='replace',
+            prompt_name=prompt_name,
+            entity_uuid=edge.uuid,
+            group_id=edge.group_id,
+        )
+        edge_model(**merged)
+    except (EmptyResponseError, json.JSONDecodeError, ValidationError):
+        logger.warning(
+            'attribute extraction failed; kept existing attributes '
+            'uuid=%s entity_type=%s prompt=%s',
+            edge.uuid,
+            edge_model.__name__,
+            prompt_name,
+        )
+        return
+    edge.attributes = merged
 
 
 def build_episodic_edges(
@@ -615,6 +662,7 @@ async def _extract_edge_timestamps(
         llm_response = await llm_client.generate_response(
             prompt_library.extract_edges.extract_timestamps(context),
             response_model=EdgeTimestamps,
+            max_tokens=256,
             model_size=ModelSize.small,
             prompt_name='extract_edges.extract_timestamps',
         )
@@ -671,28 +719,7 @@ async def resolve_extracted_edge(
         # Still extract custom attributes and timestamps even when no dedup needed
         edge_model = edge_type_candidates.get(extracted_edge.name) if edge_type_candidates else None
         if edge_model is not None and len(edge_model.model_fields) != 0:
-            edge_attributes_context = {
-                'fact': extracted_edge.fact,
-                'reference_time': episode.valid_at if episode is not None else None,
-                'existing_attributes': extracted_edge.attributes,
-            }
-            edge_attributes_response = await llm_client.generate_response(
-                prompt_library.extract_edges.extract_attributes(edge_attributes_context),
-                response_model=edge_model,  # type: ignore
-                model_size=ModelSize.small,
-                prompt_name='extract_edges.extract_attributes',
-                attribute_extraction=True,
-            )
-            merged, _ = apply_capped_attributes(
-                edge_attributes_response,
-                edge_model,
-                extracted_edge.attributes,
-                merge_mode='replace',
-                prompt_name='extract_edges.extract_attributes',
-                entity_uuid=extracted_edge.uuid,
-                group_id=extracted_edge.group_id,
-            )
-            extracted_edge.attributes = merged
+            await _extract_edge_attributes(llm_client, extracted_edge, episode, edge_model)
 
         await _extract_edge_timestamps(llm_client, extracted_edge, episode)
 
@@ -798,30 +825,7 @@ async def resolve_extracted_edge(
     # AND the edge model exists for this node pair signature
     edge_model = edge_type_candidates.get(resolved_edge.name) if edge_type_candidates else None
     if edge_model is not None and len(edge_model.model_fields) != 0:
-        edge_attributes_context = {
-            'fact': resolved_edge.fact,
-            'reference_time': episode.valid_at if episode is not None else None,
-            'existing_attributes': resolved_edge.attributes,
-        }
-
-        edge_attributes_response = await llm_client.generate_response(
-            prompt_library.extract_edges.extract_attributes(edge_attributes_context),
-            response_model=edge_model,  # type: ignore
-            model_size=ModelSize.small,
-            prompt_name='extract_edges.extract_attributes',
-            attribute_extraction=True,
-        )
-
-        merged, _ = apply_capped_attributes(
-            edge_attributes_response,
-            edge_model,
-            resolved_edge.attributes,
-            merge_mode='replace',
-            prompt_name='extract_edges.extract_attributes',
-            entity_uuid=resolved_edge.uuid,
-            group_id=resolved_edge.group_id,
-        )
-        resolved_edge.attributes = merged
+        await _extract_edge_attributes(llm_client, resolved_edge, episode, edge_model)
     else:
         # No matching edge schema → no structured attributes apply; clear any stale
         # attributes left from a prior schema. Intentionally not merged.

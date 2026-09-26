@@ -3,8 +3,10 @@ from collections import defaultdict
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import BaseModel
 
 from graphiti_core.graphiti_types import GraphitiClients
+from graphiti_core.llm_client.errors import EmptyResponseError, RateLimitError
 from graphiti_core.nodes import EntityNode, EpisodeType, EpisodicNode
 from graphiti_core.utils.datetime_utils import utc_now
 from graphiti_core.utils.maintenance.dedup_helpers import (
@@ -66,6 +68,84 @@ def _semantic_candidates(candidate_groups: list[list[EntityNode]]):
         return candidate_groups
 
     return fake_search
+
+
+class AttributeTestType(BaseModel):
+    detail: str | None = None
+
+
+@pytest.mark.asyncio
+async def test_attribute_failure_isolated_per_entity_and_capped(monkeypatch, caplog):
+    clients, llm_generate = _make_clients()
+    nodes = [
+        EntityNode(
+            name=f'SECRET-NAME-{i}',
+            group_id='group',
+            labels=['Entity', 'AttributeTestType'],
+            attributes={'detail': f'prior-{i}'},
+        )
+        for i in range(3)
+    ]
+    responses = [
+        {'detail': 'updated-0'},
+        EmptyResponseError('hit the token cap with SECRET-NAME-1'),
+        {'detail': 'updated-2'},
+    ]
+    llm_generate.side_effect = responses
+    monkeypatch.setattr(
+        'graphiti_core.utils.maintenance.node_operations._extract_entity_summaries_batch',
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        'graphiti_core.utils.maintenance.node_operations.create_entity_node_embeddings',
+        AsyncMock(return_value=None),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await extract_attributes_from_nodes(
+            clients,
+            nodes,
+            episode=_make_episode(),
+            previous_episodes=[],
+            entity_types={'AttributeTestType': AttributeTestType},
+        )
+
+    assert [node.attributes['detail'] for node in result] == [
+        'updated-0',
+        'prior-1',
+        'updated-2',
+    ]
+    assert llm_generate.await_count == 3
+    assert all(call.kwargs['max_tokens'] == 768 for call in llm_generate.await_args_list)
+    assert nodes[1].uuid in caplog.text
+    assert 'entity_type=AttributeTestType' in caplog.text
+    assert 'prompt=extract_nodes.extract_attributes' in caplog.text
+    assert 'SECRET-NAME' not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_attribute_rate_limit_still_propagates(monkeypatch):
+    clients, llm_generate = _make_clients()
+    llm_generate.side_effect = RateLimitError('retry me')
+    node = EntityNode(
+        name='sensitive',
+        group_id='group',
+        labels=['Entity', 'AttributeTestType'],
+        attributes={'detail': 'prior'},
+    )
+    monkeypatch.setattr(
+        'graphiti_core.utils.maintenance.node_operations._extract_entity_summaries_batch',
+        AsyncMock(return_value=None),
+    )
+
+    with pytest.raises(RateLimitError, match='retry me'):
+        await extract_attributes_from_nodes(
+            clients,
+            [node],
+            episode=_make_episode(),
+            previous_episodes=[],
+            entity_types={'AttributeTestType': AttributeTestType},
+        )
 
 
 @pytest.mark.asyncio
