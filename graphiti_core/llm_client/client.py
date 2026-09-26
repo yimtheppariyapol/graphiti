@@ -28,7 +28,7 @@ from ..prompts.models import Message
 from ..tracer import NoOpTracer, Tracer
 from .cache import LLMCache
 from .config import DEFAULT_MAX_TOKENS, LLMConfig, ModelSize
-from .errors import EmptyResponseError, RateLimitError
+from .errors import EmptyResponseError, RateLimitError, TokenCapError
 from .token_tracker import TokenUsageTracker
 
 DEFAULT_TEMPERATURE = 0
@@ -64,6 +64,9 @@ def is_server_or_retry_error(exception):
     # provider/endpoint hiccup (common on the OpenAI-compatible/local servers the generic
     # client targets), which a retry can recover from. A persistent empty response still
     # fails after the bounded retries with a clear error.
+    # fleet.17: a token cap is a property of the prompt, not a flaky endpoint (see TokenCapError).
+    if isinstance(exception, TokenCapError):
+        return False
     if isinstance(exception, RateLimitError | EmptyResponseError | json.decoder.JSONDecodeError):
         return True
 

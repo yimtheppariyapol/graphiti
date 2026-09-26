@@ -37,3 +37,13 @@ class EmptyResponseError(Exception):
     def __init__(self, message: str):
         self.message = message
         super().__init__(self.message)
+
+
+class TokenCapError(EmptyResponseError):
+    """The response hit max_tokens (finish_reason=length).
+
+    fleet.17: not transient. Measured 2026-09-26 on 248 captured extract_attributes requests x 3
+    temperatures x 5 samples: every loop came from one prompt, which looped in 57 of 60 samples at
+    the production temperature and at temperature 0 too. A retry rescues about 5% of the time
+    while costing ~15 s plus backoff, so the retry predicate excludes this class.
+    """

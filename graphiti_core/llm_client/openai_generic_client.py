@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from ..prompts.models import Message
 from .client import LLMClient, get_extraction_language_instruction
 from .config import DEFAULT_MAX_TOKENS, LLMConfig, ModelSize
-from .errors import EmptyResponseError, RateLimitError
+from .errors import EmptyResponseError, RateLimitError, TokenCapError
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +172,7 @@ class OpenAIGenericClient(LLMClient):
             # fleet.16: a capped structured response is incomplete, so fail with the
             # stable poison-queue signature instead of retrying JSON parsing indefinitely.
             if finish_reason == 'length':
-                raise EmptyResponseError(
+                raise TokenCapError(
                     'LLM response hit the token cap '
                     f'(finish_reason=length, {len(result)} chars) — '
                     'raise max_tokens or shrink the prompt'
