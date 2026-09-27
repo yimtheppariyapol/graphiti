@@ -764,8 +764,8 @@ wheels = [
 
 [[package]]
 name = "graphiti-core"
-version = "0.29.2+fleet.17"
-source = { path = "/root/labs/fleet-wheels/graphiti_core-0.29.2+fleet.17-py3-none-any.whl" }
+version = "0.29.2+fleet.18"
+source = { path = "/root/labs/fleet-wheels/graphiti_core-0.29.2+fleet.18-py3-none-any.whl" }
 dependencies = [
     { name = "neo4j" },
     { name = "numpy" },
@@ -776,7 +776,7 @@ dependencies = [
     { name = "tenacity" },
 ]
 wheels = [
-    { filename = "graphiti_core-0.29.2+fleet.17-py3-none-any.whl", hash = "sha256:51a3d1da1230233f1dd1d2b4ae4e0e5e704ca8bd179a9fa487e97444d39c7837" },
+    { filename = "graphiti_core-0.29.2+fleet.18-py3-none-any.whl", hash = "sha256:ac45b43b155dd11558a22591ca44eae9b8afdbb6a7025010321d2375da9e9416" },
 ]
 
 [package.optional-dependencies]
@@ -1313,7 +1313,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.107.1" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.25.3" },
     { name = "google-genai", marker = "extra == 'providers'", specifier = ">=2.8.0" },
-    { name = "graphiti-core", extras = ["falkordb"], path = "/root/labs/fleet-wheels/graphiti_core-0.29.2+fleet.17-py3-none-any.whl" },
+    { name = "graphiti-core", extras = ["falkordb"], path = "/root/labs/fleet-wheels/graphiti_core-0.29.2+fleet.18-py3-none-any.whl" },
     { name = "groq", marker = "extra == 'providers'", specifier = ">=1.2.0" },
     { name = "mcp", specifier = ">=1.27.2,<2" },
     { name = "openai", specifier = ">=2.41.0" },
