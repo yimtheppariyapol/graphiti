@@ -188,6 +188,14 @@ class LLMClient(ABC):
             'what a real value LOOKS LIKE — they are NEVER themselves valid values and '
             'must NEVER be copied into any field. If you have no value for a field, set '
             'it to null; never explain the absence in the field itself.'
+            # fleet.18: without this, a hub entity (the Person "Yim") had its description
+            # rewritten as a running log of every decision in the messages until the token
+            # cap, 10/10 samples, and cleaning its stored attributes alone did not stop it.
+            # With it: 3/10 on that prompt; across 248 captured prod prompts, loops 4.6% -> 0%,
+            # descriptions over 250 chars 41 -> 0, event-log style 7% -> 4%.
+            '\n\nFor any `description` field: write ONE sentence of at most 250 characters '
+            'saying what the entity is (role, type, relationship). Never list events, '
+            'decisions or facts from the messages.'
         )
         target = messages[0]
         if sentinel in target.content:
