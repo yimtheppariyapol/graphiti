@@ -250,6 +250,28 @@ def _find_sentence_end(text: str) -> int:
     return -1
 
 
+def _as_list_field_mapping(llm_response, field: str) -> dict:
+    """Coerce an extraction LLM response into the mapping its response model expects.
+
+    fleet.19: open models behind OpenRouter occasionally return the payload as a JSON *string*
+    or as the bare *list* instead of `{field: [...]}`. `Model(**resp)` then raised
+    "argument after ** must be a mapping" and the episode was dead-lettered after 3 retries
+    (2026-09-29: dobby-2026-09-29 #cf577685 — SummarizedEntities got str; "shadow Jizo, Osaa"
+    — ExtractedEntities got list). A dict passes through untouched, so Gemini-style flat output
+    and every other caller behave exactly as before.
+    """
+    if isinstance(llm_response, str):
+        try:
+            llm_response = json.loads(llm_response)
+        except (ValueError, TypeError):
+            raise TypeError(f'{field}: LLM returned a non-JSON string') from None
+    if isinstance(llm_response, list):
+        return {field: llm_response}
+    if isinstance(llm_response, dict):
+        return llm_response
+    raise TypeError(f'{field}: LLM returned {type(llm_response).__name__}, expected a mapping')
+
+
 async def _extract_nodes_single(
     llm_client: LLMClient,
     episode: EpisodicNode,
@@ -257,7 +279,7 @@ async def _extract_nodes_single(
 ) -> list[ExtractedEntity]:
     """Extract entities using a single LLM call."""
     llm_response = await _call_extraction_llm(llm_client, episode, context)
-    response_object = ExtractedEntities(**llm_response)
+    response_object = ExtractedEntities(**_as_list_field_mapping(llm_response, 'extracted_entities'))
     return response_object.extracted_entities
 
 
@@ -1021,7 +1043,7 @@ async def _process_summary_flight(
         name_to_nodes[key].append(node)
 
     # Apply summaries from LLM response
-    summaries_response = SummarizedEntities(**llm_response)
+    summaries_response = SummarizedEntities(**_as_list_field_mapping(llm_response, 'summaries'))
     for summarized_entity in summaries_response.summaries:
         matching_nodes = name_to_nodes.get(summarized_entity.name.lower(), [])
         if matching_nodes:

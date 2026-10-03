@@ -102,6 +102,17 @@ def lucene_sanitize(query: str) -> str:
             ':': r'\:',
             '\\': r'\\',
             '/': r'\/',
+            # 2026-09-28: these four are RediSearch/FalkorDB fulltext specials that this map
+            # missed, so an entity name containing one produced
+            #   "Syntax error at offset N near <token>"
+            # from db.idx.fulltext.queryNodes during dedup — the episode then failed, retried 3x
+            # and was dead-lettered. Measured by scanning every ASCII punctuation character
+            # through lucene_sanitize into a real fulltext query: exactly these 4 still broke
+            # ($ % ; @), everything else was already handled.
+            '$': r'\$',
+            '%': r'\%',
+            ';': r'\;',
+            '@': r'\@',
             'O': r'\O',
             'R': r'\R',
             'N': r'\N',
